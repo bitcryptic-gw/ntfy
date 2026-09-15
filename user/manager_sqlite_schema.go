@@ -61,6 +61,7 @@ const (
 			write INT NOT NULL,
 			owner_user_id INT,
 			provisioned INT NOT NULL,
+			visibility TEXT NOT NULL DEFAULT 'private',
 			PRIMARY KEY (user_id, topic),
 			FOREIGN KEY (user_id) REFERENCES user (id) ON DELETE CASCADE,
 		    FOREIGN KEY (owner_user_id) REFERENCES user (id) ON DELETE CASCADE
@@ -114,7 +115,7 @@ const (
 )
 
 const (
-	sqliteCurrentSchemaVersion = 9
+	sqliteCurrentSchemaVersion = 10
 )
 
 // Schema migrations for SQLite
@@ -366,6 +367,14 @@ const (
 		WHERE user_id IN (SELECT id FROM user); -- Drop orphaned rows that the broken foreign key failed to cascade-delete
 		DROP TABLE user_phone_old;
 	`
+
+	// 9 -> 10: Topic visibility for discovery. The column is meaningful only on the
+	// reservation's owner row (where user_id = owner_user_id); the paired Everyone row keeps
+	// the default and is ignored. Existing reservations stay 'private', so no behavior changes
+	// for topics that predate this column.
+	sqliteMigrate9To10UpdateQueries = `
+		ALTER TABLE user_access ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private';
+	`
 )
 
 var (
@@ -382,6 +391,7 @@ var (
 		6: schema.AsMigrateFunc(sqliteMigrate6To7UpdateQueries),
 		7: schema.AsMigrateFunc(sqliteMigrate7To8UpdateQueries),
 		8: schema.AsMigrateFunc(sqliteMigrate8To9UpdateQueries),
+		9: schema.AsMigrateFunc(sqliteMigrate9To10UpdateQueries),
 	}
 )
 

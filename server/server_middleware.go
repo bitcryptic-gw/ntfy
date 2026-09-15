@@ -161,6 +161,12 @@ func (s *Server) authorizeTopic(next handleFunc, perm user.Permission) handleFun
 		}
 		u := v.User()
 		for _, t := range topics {
+			// The topic directory is the discovery channel for shared topics: every authenticated
+			// user may read it. Anonymous users are not granted access here (they fall through to
+			// the normal ACL/default-access check).
+			if u != nil && t.ID == directoryTopicID && perm == user.PermissionRead {
+				continue
+			}
 			if err := s.userManager.Authorize(u, t.ID, perm); err != nil {
 				logvr(v, r).With(t).Err(err).Debug("Access to topic %s not authorized", t.ID)
 				return errHTTPForbidden.With(t)

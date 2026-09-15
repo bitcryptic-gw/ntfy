@@ -179,9 +179,40 @@ type Grant struct {
 
 // Reservation is a struct that represents the ownership over a topic by a user
 type Reservation struct {
-	Topic    string
-	Owner    Permission
-	Everyone Permission
+	Topic      string
+	Owner      Permission
+	Everyone   Permission
+	Visibility Visibility
+}
+
+// Visibility describes whether a reserved topic is discoverable by other users on the same
+// ntfy instance. It is stored on the reservation's owner row in user_access.
+type Visibility string
+
+// Visibility values
+const (
+	VisibilityPrivate Visibility = "private" // Default: only the owner (and admins) knows about it
+	VisibilityShared  Visibility = "shared"  // Listed by GET /v1/topics?visibility=shared for any authenticated user
+)
+
+// ParseVisibility parses the string representation and returns a Visibility
+func ParseVisibility(s string) (Visibility, error) {
+	switch strings.ToLower(s) {
+	case string(VisibilityPrivate), "":
+		return VisibilityPrivate, nil
+	case string(VisibilityShared):
+		return VisibilityShared, nil
+	default:
+		return VisibilityPrivate, errors.New("invalid visibility")
+	}
+}
+
+// SharedTopic is a reserved topic that its owner has marked as shared, as returned by
+// Manager.SharedTopics. ntfy does not track a reservation's creation time, so only the topic
+// name and the owner's username are available.
+type SharedTopic struct {
+	Topic string
+	Owner string
 }
 
 // Email is a verified email address on a user account, along with whether it is the user's
@@ -372,6 +403,9 @@ type queries struct {
 	selectUserReservationsOwner string
 	selectUserHasReservation    string
 	selectOtherAccessCount      string
+	selectSharedTopics          string // Discovery: shared topics + owner username, for GET /v1/topics
+	selectTopicVisibility       string // Visibility + owner user ID for a reserved topic
+	updateTopicVisibility       string // Set visibility on a topic's owner row (owner only)
 	upsertUserAccess            string
 	deleteUserAccess            string
 	deleteUserAccessProvisioned string

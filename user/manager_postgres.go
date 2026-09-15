@@ -107,7 +107,7 @@ const (
 		ORDER BY LENGTH(topic) DESC, CASE WHEN write THEN 1 ELSE 0 END DESC, CASE WHEN read THEN 1 ELSE 0 END DESC, topic
 	`
 	postgresSelectUserReservationsQuery = `
-		SELECT a_user.topic, a_user.read, a_user.write, a_everyone.read AS everyone_read, a_everyone.write AS everyone_write
+		SELECT a_user.topic, a_user.read, a_user.write, a_everyone.read AS everyone_read, a_everyone.write AS everyone_write, a_user.visibility
 		FROM user_access a_user
 		LEFT JOIN  user_access a_everyone ON a_user.topic = a_everyone.topic AND a_everyone.user_id = (SELECT id FROM "user" WHERE user_name = $1)
 		WHERE a_user.user_id = a_user.owner_user_id
@@ -138,6 +138,27 @@ const (
 		FROM user_access
 		WHERE (topic = $1 OR $2 LIKE topic ESCAPE '\')
 		  AND (owner_user_id IS NULL OR owner_user_id != (SELECT id FROM "user" WHERE user_name = $3))
+	`
+	postgresSelectSharedTopicsQuery = `
+		SELECT a.topic, u.user_name
+		FROM user_access a
+		JOIN "user" u ON u.id = a.owner_user_id
+		WHERE a.user_id = a.owner_user_id
+		  AND a.visibility = $1
+		ORDER BY a.topic
+	`
+	postgresSelectTopicVisibilityQuery = `
+		SELECT visibility, owner_user_id
+		FROM user_access
+		WHERE topic = $1
+		  AND user_id = owner_user_id
+	`
+	postgresUpdateTopicVisibilityQuery = `
+		UPDATE user_access
+		SET visibility = $1
+		WHERE topic = $2
+		  AND user_id = owner_user_id
+		  AND owner_user_id = $3
 	`
 	postgresUpsertUserAccessQuery = `
 		INSERT INTO user_access (user_id, topic, read, write, owner_user_id, provisioned)
@@ -302,6 +323,9 @@ var postgresQueries = queries{
 	selectUserReservationsOwner:    postgresSelectUserReservationsOwnerQuery,
 	selectUserHasReservation:       postgresSelectUserHasReservationQuery,
 	selectOtherAccessCount:         postgresSelectOtherAccessCountQuery,
+	selectSharedTopics:             postgresSelectSharedTopicsQuery,
+	selectTopicVisibility:          postgresSelectTopicVisibilityQuery,
+	updateTopicVisibility:          postgresUpdateTopicVisibilityQuery,
 	upsertUserAccess:               postgresUpsertUserAccessQuery,
 	deleteUserAccess:               postgresDeleteUserAccessQuery,
 	deleteUserAccessProvisioned:    postgresDeleteUserAccessProvisionedQuery,

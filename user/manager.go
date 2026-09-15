@@ -972,21 +972,88 @@ func (a *Manager) reservationsTx(tx db.Querier, username string) ([]Reservation,
 	defer rows.Close()
 	reservations := make([]Reservation, 0)
 	for rows.Next() {
-		var topic string
+		var topic, visibility string
 		var ownerRead, ownerWrite bool
 		var everyoneRead, everyoneWrite sql.NullBool
-		if err := rows.Scan(&topic, &ownerRead, &ownerWrite, &everyoneRead, &everyoneWrite); err != nil {
+		if err := rows.Scan(&topic, &ownerRead, &ownerWrite, &everyoneRead, &everyoneWrite, &visibility); err != nil {
 			return nil, err
 		} else if err := rows.Err(); err != nil {
 			return nil, err
 		}
 		reservations = append(reservations, Reservation{
-			Topic:    fromSQLWildcard(topic),
-			Owner:    NewPermission(ownerRead, ownerWrite),
-			Everyone: NewPermission(everyoneRead.Bool, everyoneWrite.Bool),
+			Topic:      fromSQLWildcard(topic),
+			Owner:      NewPermission(ownerRead, ownerWrite),
+			Everyone:   NewPermission(everyoneRead.Bool, everyoneWrite.Bool),
+			Visibility: Visibility(visibility),
 		})
 	}
 	return reservations, nil
+}
+
+// TopicVisibility returns the visibility and owner user ID of the reservation for the given
+// topic. It returns an empty owner ID if the topic is not reserved by anyone. Visibility is only
+// tracked on the owner row; the paired Everyone row is ignored.
+func (a *Manager) TopicVisibility(topic string) (Visibility, string, error) {
+	rows, err := a.db.Query(a.queries.selectTopicVisibility, escapeUnderscore(topic))
+	if err != nil {
+		return "", "", err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return "", "", nil
+	}
+	var visibility, ownerUserID string
+	if err := rows.Scan(&visibility, &ownerUserID); err != nil {
+		return "", "", err
+	}
+	return Visibility(visibility), ownerUserID, nil
+}
+
+// SetTopicVisibility changes the visibility of a topic reservation. It updates the reservation's
+// owner row for the given owner user ID; ErrUnauthorized is returned if that user does not own
+// the topic. Callers are responsible for the authorization decision (owner or admin).
+func (a *Manager) SetTopicVisibility(ownerUserID, topic string, visibility Visibility) error {
+	if ownerUserID == "" || !AllowedTopic(topic) {
+		return ErrInvalidArgument
+	}
+	if visibility != VisibilityPrivate && visibility != VisibilityShared {
+		return ErrInvalidArgument
+	}
+	res, err := a.db.Exec(a.queries.updateTopicVisibility, string(visibility), escapeUnderscore(topic), ownerUserID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	} else if affected == 0 {
+		return ErrUnauthorized
+	}
+	return nil
+}
+
+// SharedTopics returns all reservations whose owner has marked them as shared, including the
+// owner's username. It is the discovery listing behind GET /v1/topics?visibility=shared.
+func (a *Manager) SharedTopics() ([]*SharedTopic, error) {
+	rows, err := a.db.Query(a.queries.selectSharedTopics, string(VisibilityShared))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	topics := make([]*SharedTopic, 0)
+	for rows.Next() {
+		var topic, owner string
+		if err := rows.Scan(&topic, &owner); err != nil {
+			return nil, err
+		} else if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		topics = append(topics, &SharedTopic{
+			Topic: fromSQLWildcard(topic),
+			Owner: owner,
+		})
+	}
+	return topics, nil
 }
 
 // HasReservation returns true if the given topic access is owned by the user

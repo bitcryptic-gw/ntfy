@@ -54,6 +54,7 @@ const (
 			write BOOLEAN NOT NULL,
 			owner_user_id TEXT REFERENCES "user"(id) ON DELETE CASCADE,
 			provisioned BOOLEAN NOT NULL,
+			visibility TEXT NOT NULL DEFAULT 'private',
 			PRIMARY KEY (user_id, topic)
 		);
 		CREATE TABLE IF NOT EXISTS user_token (
@@ -96,7 +97,7 @@ const (
 )
 
 const (
-	postgresCurrentSchemaVersion = 9
+	postgresCurrentSchemaVersion = 10
 )
 
 const (
@@ -125,6 +126,12 @@ const (
 		);
 		CREATE INDEX idx_magic_link_user_kind ON user_magic_link (user_id, kind);
 	`
+
+	// 9 -> 10: Topic visibility for discovery. Meaningful only on the reservation's owner row
+	// (where user_id = owner_user_id); existing reservations stay 'private'.
+	postgresMigrate9To10UpdateQueries = `
+		ALTER TABLE user_access ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private';
+	`
 )
 
 var (
@@ -136,5 +143,6 @@ var (
 		6: schema.AsMigrateFunc(postgresMigrate6To7UpdateQueries),
 		7: schema.AsMigrateFunc(postgresMigrate7To8UpdateQueries),
 		8: schema.NopMigrateFunc, // 8 -> 9 repairs a SQLite-only foreign key defect; nothing to do on Postgres
+		9: schema.AsMigrateFunc(postgresMigrate9To10UpdateQueries),
 	}
 )

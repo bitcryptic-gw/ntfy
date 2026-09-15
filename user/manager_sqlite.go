@@ -111,7 +111,7 @@ const (
 		ORDER BY LENGTH(topic) DESC, write DESC, read DESC, topic
 	`
 	sqliteSelectUserReservationsQuery = `
-		SELECT a_user.topic, a_user.read, a_user.write, a_everyone.read AS everyone_read, a_everyone.write AS everyone_write
+		SELECT a_user.topic, a_user.read, a_user.write, a_everyone.read AS everyone_read, a_everyone.write AS everyone_write, a_user.visibility
 		FROM user_access a_user
 		LEFT JOIN  user_access a_everyone ON a_user.topic = a_everyone.topic AND a_everyone.user_id = (SELECT id FROM user WHERE user = ?)
 		WHERE a_user.user_id = a_user.owner_user_id
@@ -142,6 +142,27 @@ const (
 		FROM user_access
 		WHERE (topic = ? OR ? LIKE topic ESCAPE '\')
 		  AND (owner_user_id IS NULL OR owner_user_id != (SELECT id FROM user WHERE user = ?))
+	`
+	sqliteSelectSharedTopicsQuery = `
+		SELECT a.topic, u.user
+		FROM user_access a
+		JOIN user u ON u.id = a.owner_user_id
+		WHERE a.user_id = a.owner_user_id
+		  AND a.visibility = ?
+		ORDER BY a.topic
+	`
+	sqliteSelectTopicVisibilityQuery = `
+		SELECT visibility, owner_user_id
+		FROM user_access
+		WHERE topic = ?
+		  AND user_id = owner_user_id
+	`
+	sqliteUpdateTopicVisibilityQuery = `
+		UPDATE user_access
+		SET visibility = ?
+		WHERE topic = ?
+		  AND user_id = owner_user_id
+		  AND owner_user_id = ?
 	`
 	sqliteUpsertUserAccessQuery = `
 		INSERT INTO user_access (user_id, topic, read, write, owner_user_id, provisioned)
@@ -298,6 +319,9 @@ var sqliteQueries = queries{
 	selectUserReservationsOwner:    sqliteSelectUserReservationsOwnerQuery,
 	selectUserHasReservation:       sqliteSelectUserHasReservationQuery,
 	selectOtherAccessCount:         sqliteSelectOtherAccessCountQuery,
+	selectSharedTopics:             sqliteSelectSharedTopicsQuery,
+	selectTopicVisibility:          sqliteSelectTopicVisibilityQuery,
+	updateTopicVisibility:          sqliteUpdateTopicVisibilityQuery,
 	upsertUserAccess:               sqliteUpsertUserAccessQuery,
 	deleteUserAccess:               sqliteDeleteUserAccessQuery,
 	deleteUserAccessProvisioned:    sqliteDeleteUserAccessProvisionedQuery,

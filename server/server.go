@@ -111,6 +111,7 @@ var (
 	apiStatsPath                                         = "/v1/stats"
 	apiWebPushPath                                       = "/v1/webpush"
 	apiTiersPath                                         = "/v1/tiers"
+	apiTopicsPath                                        = "/v1/topics"
 	apiUsersPath                                         = "/v1/users"
 	apiUsersAccessPath                                   = "/v1/users/access"
 	apiAccountPath                                       = "/v1/account"
@@ -134,6 +135,7 @@ var (
 	apiAccountBillingSubscriptionCheckoutSuccessTemplate = "/v1/account/billing/subscription/success/{CHECKOUT_SESSION_ID}"
 	apiAccountBillingSubscriptionCheckoutSuccessRegex    = regexp.MustCompile(`/v1/account/billing/subscription/success/(.+)$`)
 	apiAccountReservationSingleRegex                     = regexp.MustCompile(`/v1/account/reservation/([-_A-Za-z0-9]{1,64})$`)
+	apiTopicsSingleRegex                                 = regexp.MustCompile(`^/v1/topics/([-_A-Za-z0-9]{1,64})$`)
 	staticRegex                                          = regexp.MustCompile(`^/(static/.+|app.html|sw.js|sw.js.map)$`)
 	docsRegex                                            = regexp.MustCompile(`^/docs(|/.*)$`)
 	fileRegex                                            = regexp.MustCompile(`^/file/([-_A-Za-z0-9]{1,64})(?:\.[A-Za-z0-9]{1,16})?$`)
@@ -155,6 +157,7 @@ var (
 const (
 	firebaseControlTopic     = "~control"                // See Android if changed
 	firebasePollTopic        = "~poll"                   // See iOS if changed (DISABLED for now)
+	directoryTopicID         = "_directory"              // Discovery channel: shared topics are announced here; readable by any authenticated user
 	emptyMessageBody         = "triggered"               // Used when a message body is empty
 	newMessageBody           = "New message"             // Used in poll requests as generic message
 	defaultAttachmentMessage = "You received a file: %s" // Used if message body is empty, and there is an attachment
@@ -655,6 +658,10 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request, v *visit
 		return s.handleStats(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiTiersPath {
 		return s.ensurePaymentsEnabled(s.handleBillingTiersGet)(w, r, v)
+	} else if r.Method == http.MethodGet && r.URL.Path == apiTopicsPath {
+		return s.ensureUser(s.handleTopicsGet)(w, r, v) // Any authenticated user may discover shared topics
+	} else if r.Method == http.MethodPatch && apiTopicsSingleRegex.MatchString(r.URL.Path) {
+		return s.ensureUser(s.withAccountSync(s.handleTopicVisibilityPatch))(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == matrixPushPath {
 		return s.handleMatrixDiscovery(w)
 	} else if r.Method == http.MethodGet && r.URL.Path == metricsPath && s.metricsHandler != nil {
