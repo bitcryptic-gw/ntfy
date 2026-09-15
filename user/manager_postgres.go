@@ -158,6 +158,30 @@ const (
 		WHERE topic = $2
 		  AND owner_user_id = $3
 	`
+	// Makes a shared topic actually usable: a deny-all Everyone grant means subscribers can discover
+	// and subscribe but receive nothing, so it is upgraded to read-only. Broader grants are untouched
+	// (the NOT read AND NOT write predicate matches deny-all only).
+	postgresUpgradeEveryoneToReadOnlyQuery = `
+		UPDATE user_access
+		SET read = TRUE, write = FALSE
+		WHERE user_id = (SELECT id FROM "user" WHERE user_name = $1)
+		  AND topic = $2
+		  AND owner_user_id = $3
+		  AND read = FALSE
+		  AND write = FALSE
+	`
+	postgresSelectSharedTopicsDenyAllQuery = `
+		SELECT t.topic, u.user_name, t.owner_user_id
+		FROM topics t
+		JOIN "user" u ON u.id = t.owner_user_id
+		JOIN user_access a ON a.topic = t.topic
+		  AND a.user_id = (SELECT id FROM "user" WHERE user_name = $1)
+		  AND a.owner_user_id = t.owner_user_id
+		WHERE t.visibility = $2
+		  AND a.read = FALSE
+		  AND a.write = FALSE
+		ORDER BY t.topic
+	`
 	postgresInsertTopicQuery = `
 		INSERT INTO topics (topic, owner_user_id, visibility)
 		VALUES ($1, (SELECT id FROM "user" WHERE user_name = $2), 'private')
@@ -339,6 +363,8 @@ var postgresQueries = queries{
 	selectSharedTopics:             postgresSelectSharedTopicsQuery,
 	selectTopicVisibility:          postgresSelectTopicVisibilityQuery,
 	updateTopicVisibility:          postgresUpdateTopicVisibilityQuery,
+	upgradeEveryoneToReadOnly:      postgresUpgradeEveryoneToReadOnlyQuery,
+	selectSharedTopicsDenyAll:      postgresSelectSharedTopicsDenyAllQuery,
 	insertTopic:                    postgresInsertTopicQuery,
 	deleteTopic:                    postgresDeleteTopicQuery,
 	deleteUserTopics:               postgresDeleteUserTopicsQuery,

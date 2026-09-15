@@ -1022,6 +1022,13 @@ func (a *Manager) TopicVisibility(topic string) (Visibility, string, error) {
 // SetTopicVisibility changes the visibility of a topic reservation. It updates the topics row
 // for the given owner user ID; ErrUnauthorized is returned if that user does not own the topic.
 // Callers are responsible for the authorization decision (owner or admin).
+//
+// Sharing a topic whose Everyone ACL is still deny-all would otherwise be a silent no-op for
+// subscribers (they can discover and subscribe, but receive nothing), so the Everyone grant is
+// upgraded to read-only in the same transaction. Broader grants (read-only/read-write) are left
+// untouched. Setting a topic back to private deliberately does NOT revert the Everyone grant:
+// visibility and ACL are related but distinct, and reverting could surprise an owner who widened
+// access for other reasons.
 func (a *Manager) SetTopicVisibility(ownerUserID, topic string, visibility Visibility) error {
 	if ownerUserID == "" || !AllowedTopic(topic) {
 		return ErrInvalidArgument
@@ -1029,17 +1036,96 @@ func (a *Manager) SetTopicVisibility(ownerUserID, topic string, visibility Visib
 	if visibility != VisibilityPrivate && visibility != VisibilityShared {
 		return ErrInvalidArgument
 	}
-	res, err := a.db.Exec(a.queries.updateTopicVisibility, string(visibility), escapeUnderscore(topic), ownerUserID)
+	upgraded := false
+	err := db.ExecTx(a.db, func(tx *sql.Tx) error {
+		res, err := tx.Exec(a.queries.updateTopicVisibility, string(visibility), escapeUnderscore(topic), ownerUserID)
+		if err != nil {
+			return err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return err
+		} else if affected == 0 {
+			return ErrUnauthorized
+		}
+		if visibility == VisibilityShared {
+			upgraded, err = a.upgradeEveryoneToReadOnlyTx(tx, ownerUserID, topic)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return err
+	}
+	if upgraded {
+		log.Tag(tag).Field("topic", topic).Field("owner_user_id", ownerUserID).
+			Info("Upgraded Everyone ACL from deny-all to read-only for shared topic %s", topic)
+		return a.maybeReloadAccessCache(Everyone)
+	}
+	return nil
+}
+
+// upgradeEveryoneToReadOnlyTx upgrades the Everyone ACL of a reserved topic from deny-all to
+// read-only, within the given transaction. It returns whether a row was changed; broader grants
+// (read-only/read-write) are left untouched because the query only matches deny-all.
+func (a *Manager) upgradeEveryoneToReadOnlyTx(tx *sql.Tx, ownerUserID, topic string) (bool, error) {
+	res, err := tx.Exec(a.queries.upgradeEveryoneToReadOnly, Everyone, escapeUnderscore(topic), ownerUserID)
+	if err != nil {
+		return false, err
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return err
-	} else if affected == 0 {
-		return ErrUnauthorized
+		return false, err
 	}
-	return nil
+	return affected > 0, nil
+}
+
+// BackfillSharedTopicReadAccess repairs pre-existing data: every shared topic whose Everyone ACL is
+// still deny-all is upgraded to read-only, matching what SetTopicVisibility now does for new shares.
+// It returns the changes it made so callers can log them (topic, owner, before/after). This is a
+// one-off data repair, not a schema migration; it is idempotent and a no-op once the data is fixed.
+func (a *Manager) BackfillSharedTopicReadAccess() ([]*SharedTopicACLChange, error) {
+	changes, err := db.QueryTx(a.db, func(tx *sql.Tx) ([]*SharedTopicACLChange, error) {
+		rows, err := tx.Query(a.queries.selectSharedTopicsDenyAll, Everyone, string(VisibilityShared))
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		changes := make([]*SharedTopicACLChange, 0)
+		for rows.Next() {
+			var topic, owner, ownerUserID string
+			if err := rows.Scan(&topic, &owner, &ownerUserID); err != nil {
+				return nil, err
+			} else if err := rows.Err(); err != nil {
+				return nil, err
+			}
+			rawTopic := fromSQLWildcard(topic)
+			upgraded, err := a.upgradeEveryoneToReadOnlyTx(tx, ownerUserID, rawTopic)
+			if err != nil {
+				return nil, err
+			}
+			if upgraded {
+				changes = append(changes, &SharedTopicACLChange{
+					Topic:  rawTopic,
+					Owner:  owner,
+					Before: PermissionDenyAll,
+					After:  PermissionRead,
+				})
+			}
+		}
+		return changes, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(changes) > 0 {
+		if err := a.maybeReloadAccessCache(Everyone); err != nil {
+			return nil, err
+		}
+	}
+	return changes, nil
 }
 
 // SharedTopics returns all reservations whose owner has marked them as shared, including the

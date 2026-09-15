@@ -215,6 +215,14 @@ type SharedTopic struct {
 	Owner string
 }
 
+// SharedTopicACLChange records one topic whose Everyone ACL a backfill upgraded, for audit logging.
+type SharedTopicACLChange struct {
+	Topic  string
+	Owner  string
+	Before Permission
+	After  Permission
+}
+
 // Email is a verified email address on a user account, along with whether it is the user's
 // designated primary (recovery) address.
 type Email struct {
@@ -406,6 +414,8 @@ type queries struct {
 	selectSharedTopics          string // Discovery: shared topics + owner username, for GET /v1/topics
 	selectTopicVisibility       string // Visibility + owner user ID for a reserved topic
 	updateTopicVisibility       string // Set visibility on a topic's owner row (owner only)
+	upgradeEveryoneToReadOnly   string // Upgrade a topic's Everyone ACL from deny-all to read-only (no-op if broader)
+	selectSharedTopicsDenyAll   string // Shared topics whose Everyone ACL is still deny-all (backfill input)
 	insertTopic                 string // Create a reservation's topics row (idempotent, keeps visibility)
 	deleteTopic                 string // Remove one owned topic's topics row
 	deleteUserTopics            string // Remove all topics rows owned by a user

@@ -168,3 +168,70 @@ func TestTopics_ReservedNameCannotBeClaimedOrRead(t *testing.T) {
 		require.Equal(t, 403, rr.Code)
 	})
 }
+
+// TestTopics_PatchVisibility_UpgradesDenyAllEveryone verifies that sharing a topic whose Everyone
+// ACL is deny-all immediately makes it readable (no separate grant needed), and that going private
+// again does not revert the grant.
+func TestTopics_PatchVisibility_UpgradesDenyAllEveryone(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		c := newTestConfigWithAuthFile(t, databaseURL)
+		c.AuthDefault = user.PermissionDenyAll
+		s := newTestServer(t, c)
+		defer s.closeDatabases()
+
+		require.Nil(t, s.userManager.AddUser("ben", "ben", user.RoleUser, false))
+		require.Nil(t, s.userManager.AddUser("phil", "phil", user.RoleUser, false))
+		phil, err := s.userManager.User("phil")
+		require.Nil(t, err)
+		require.Nil(t, s.userManager.AddReservation("ben", "mytopic", user.PermissionDenyAll, 0))
+		require.Equal(t, user.ErrUnauthorized, s.userManager.Authorize(phil, "mytopic", user.PermissionRead))
+
+		rr := request(t, s, "PATCH", "/v1/topics/mytopic", `{"visibility":"shared"}`, map[string]string{
+			"Authorization": util.BasicAuth("ben", "ben"),
+		})
+		require.Equal(t, 200, rr.Code)
+
+		// The Everyone grant was upgraded, so a new subscriber can now read.
+		require.Nil(t, s.userManager.Authorize(phil, "mytopic", user.PermissionRead))
+		reservations, err := s.userManager.Reservations("ben")
+		require.Nil(t, err)
+		require.Equal(t, 1, len(reservations))
+		require.Equal(t, user.PermissionRead, reservations[0].Everyone)
+
+		// Asymmetry: private does not revert the Everyone grant.
+		rr = request(t, s, "PATCH", "/v1/topics/mytopic", `{"visibility":"private"}`, map[string]string{
+			"Authorization": util.BasicAuth("ben", "ben"),
+		})
+		require.Equal(t, 200, rr.Code)
+		require.Nil(t, s.userManager.Authorize(phil, "mytopic", user.PermissionRead))
+	})
+}
+
+// TestTopics_CreationShared_UpgradesDenyAllEveryone verifies the same upgrade happens on the
+// reservation-creation path when visibility=shared is requested (as Discover's flow can do).
+func TestTopics_CreationShared_UpgradesDenyAllEveryone(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		c := newTestConfigWithAuthFile(t, databaseURL)
+		c.AuthDefault = user.PermissionDenyAll
+		s := newTestServer(t, c)
+		defer s.closeDatabases()
+
+		require.Nil(t, s.userManager.AddUser("ben", "ben", user.RoleUser, false))
+		require.Nil(t, s.userManager.AddUser("phil", "phil", user.RoleUser, false))
+		require.Nil(t, s.userManager.AddTier(&user.Tier{Code: "pro", ReservationLimit: 5}))
+		require.Nil(t, s.userManager.ChangeTier("ben", "pro"))
+		phil, err := s.userManager.User("phil")
+		require.Nil(t, err)
+
+		rr := request(t, s, "POST", "/v1/account/reservation", `{"topic":"fresh","everyone":"deny-all","visibility":"shared"}`, map[string]string{
+			"Authorization": util.BasicAuth("ben", "ben"),
+		})
+		require.Equal(t, 200, rr.Code)
+
+		require.Nil(t, s.userManager.Authorize(phil, "fresh", user.PermissionRead))
+		reservations, err := s.userManager.Reservations("ben")
+		require.Nil(t, err)
+		require.Equal(t, 1, len(reservations))
+		require.Equal(t, user.PermissionRead, reservations[0].Everyone)
+	})
+}

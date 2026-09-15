@@ -162,6 +162,30 @@ const (
 		WHERE topic = ?
 		  AND owner_user_id = ?
 	`
+	// Makes a shared topic actually usable: a deny-all Everyone grant means subscribers can discover
+	// and subscribe but receive nothing, so it is upgraded to read-only. Broader grants are untouched
+	// (the read=0/write=0 predicate matches deny-all only).
+	sqliteUpgradeEveryoneToReadOnlyQuery = `
+		UPDATE user_access
+		SET read = 1, write = 0
+		WHERE user_id = (SELECT id FROM user WHERE user = ?)
+		  AND topic = ?
+		  AND owner_user_id = ?
+		  AND read = 0
+		  AND write = 0
+	`
+	sqliteSelectSharedTopicsDenyAllQuery = `
+		SELECT t.topic, u.user, t.owner_user_id
+		FROM topics t
+		JOIN user u ON u.id = t.owner_user_id
+		JOIN user_access a ON a.topic = t.topic
+		  AND a.user_id = (SELECT id FROM user WHERE user = ?)
+		  AND a.owner_user_id = t.owner_user_id
+		WHERE t.visibility = ?
+		  AND a.read = 0
+		  AND a.write = 0
+		ORDER BY t.topic
+	`
 	sqliteInsertTopicQuery = `
 		INSERT INTO topics (topic, owner_user_id, visibility)
 		VALUES (?, (SELECT id FROM user WHERE user = ?), 'private')
@@ -335,6 +359,8 @@ var sqliteQueries = queries{
 	selectSharedTopics:             sqliteSelectSharedTopicsQuery,
 	selectTopicVisibility:          sqliteSelectTopicVisibilityQuery,
 	updateTopicVisibility:          sqliteUpdateTopicVisibilityQuery,
+	upgradeEveryoneToReadOnly:      sqliteUpgradeEveryoneToReadOnlyQuery,
+	selectSharedTopicsDenyAll:      sqliteSelectSharedTopicsDenyAllQuery,
 	insertTopic:                    sqliteInsertTopicQuery,
 	deleteTopic:                    sqliteDeleteTopicQuery,
 	deleteUserTopics:               sqliteDeleteUserTopicsQuery,
