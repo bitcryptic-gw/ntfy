@@ -9,6 +9,9 @@ import config from "./config";
 import emojisMapped from "./emojisMapped";
 import { THEME, DATE_FORMAT, TIME_FORMAT } from "./Prefs";
 
+// Reserved server-side system topic that announces newly shared topics. Only authenticated users
+// may read it; it can never be reserved by a regular account ("~" is outside the topic charset).
+export const directoryTopic = "~directory";
 export const tiersUrl = (baseUrl) => `${baseUrl}/v1/tiers`;
 export const shortUrl = (url) => url.replaceAll(/https?:\/\//g, "");
 export const expandUrl = (url) => [`https://${url}`, `http://${url}`];
@@ -30,6 +33,9 @@ export const accountSettingsUrl = (baseUrl) => `${baseUrl}/v1/account/settings`;
 export const accountSubscriptionUrl = (baseUrl) => `${baseUrl}/v1/account/subscription`;
 export const accountReservationUrl = (baseUrl) => `${baseUrl}/v1/account/reservation`;
 export const accountReservationSingleUrl = (baseUrl, topic) => `${baseUrl}/v1/account/reservation/${topic}`;
+export const topicsUrl = (baseUrl) => `${baseUrl}/v1/topics`;
+export const topicsSharedUrl = (baseUrl) => `${topicsUrl(baseUrl)}?visibility=shared`;
+export const topicVisibilityUrl = (baseUrl, topic) => `${topicsUrl(baseUrl)}/${topic}`;
 export const accountBillingSubscriptionUrl = (baseUrl) => `${baseUrl}/v1/account/billing/subscription`;
 export const accountBillingPortalUrl = (baseUrl) => `${baseUrl}/v1/account/billing/portal`;
 export const accountPhoneUrl = (baseUrl) => `${baseUrl}/v1/account/phone`;
