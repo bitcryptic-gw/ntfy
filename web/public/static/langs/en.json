@@ -215,6 +215,7 @@
   "subscribe_dialog_subscribe_description": "Topics may not be password-protected, so choose a name that's not easy to guess. Once subscribed, you can PUT/POST notifications.",
   "subscribe_dialog_subscribe_topic_placeholder": "Topic name, e.g. phil_alerts",
   "subscribe_dialog_subscribe_use_another_label": "Use another server",
+  "subscribe_dialog_discoverable_label": "Make discoverable (shared)",
   "subscribe_dialog_subscribe_use_another_background_info": "Notifications from other servers will not be received when the web app is not open",
   "subscribe_dialog_subscribe_base_url_label": "Service URL",
   "subscribe_dialog_subscribe_button_generate_topic_name": "Generate name",

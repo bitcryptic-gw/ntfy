@@ -125,7 +125,7 @@ logged-in users and surfaces each announcement as a toast.
     ```
 
 ## Web UI
-In the web app, the feature lives in two places, both available only to logged-in users:
+In the web app, the feature surfaces in three places, all available only to logged-in users:
 
 - **Discover** (left-hand navigation): lists the topics returned by
   `GET /v1/topics?visibility=shared` **that you are not already subscribed to**, showing the topic name
@@ -133,9 +133,16 @@ In the web app, the feature lives in two places, both available only to logged-i
   flow; subscribing removes the entry immediately, without a reload (the list is filtered against your
   live subscription state). If every shared topic is already subscribed, Discover shows a "No new shared
   topics" message. The list refreshes when a new shared topic is announced on `~directory`.
+- **Subscribe dialog** (the **+** → *Subscribe to topic* flow): when you turn on **Reserve topic and
+  configure access**, the same dialog also offers **Make discoverable (shared)**. The access level and
+  discoverability are independent: choosing a wider access level does not turn discoverability on, and
+  the discoverable switch is **off by default** (matching the private default). Reserving with it on
+  marks the topic shared as part of the same action, so no separate trip through the per-topic menu is
+  needed. Setting it off leaves the reservation private, exactly as before.
 - **Per-topic menu** (the ⋮ menu on a subscribed topic you own): **Share topic (discoverable)** marks
-  the topic as shared; **Make topic private** switches it back. The toggle only appears for topics you
-  have reserved.
+  the topic as shared; **Make topic private** switches it back. This remains the way to change a
+  topic's visibility **after** it has been reserved (e.g. reserve privately now, share it later). The
+  toggle only appears for topics you have reserved.
 
 ## Sharing and access
 A reserved topic carries an `everyone` access rule that controls what other users may do with it. A
