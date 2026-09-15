@@ -128,9 +128,11 @@ logged-in users and surfaces each announcement as a toast.
 In the web app, the feature lives in two places, both available only to logged-in users:
 
 - **Discover** (left-hand navigation): lists the topics returned by
-  `GET /v1/topics?visibility=shared`, showing the topic name and its owner. Each entry has a
-  **Subscribe** button that subscribes you using the normal subscribe flow. The list refreshes when a
-  new shared topic is announced on `~directory`.
+  `GET /v1/topics?visibility=shared` **that you are not already subscribed to**, showing the topic name
+  and its owner. Each entry has a **Subscribe** button that subscribes you using the normal subscribe
+  flow; subscribing removes the entry immediately, without a reload (the list is filtered against your
+  live subscription state). If every shared topic is already subscribed, Discover shows a "No new shared
+  topics" message. The list refreshes when a new shared topic is announced on `~directory`.
 - **Per-topic menu** (the ⋮ menu on a subscribed topic you own): **Share topic (discoverable)** marks
   the topic as shared; **Make topic private** switches it back. The toggle only appears for topics you
   have reserved.

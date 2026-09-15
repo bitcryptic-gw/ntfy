@@ -1,18 +1,18 @@
 import * as React from "react";
 import { useCallback, useContext, useEffect, useState } from "react";
-import { Box, Button, Card, CardContent, Chip, CircularProgress, Container, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Card, CardContent, CircularProgress, Container, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useOutletContext } from "react-router-dom";
+import { useOutletContext } from "react-router-dom";
 import accountApi from "../app/AccountApi";
 import session from "../app/Session";
 import config from "../app/config";
-import routes from "./routes";
 import { subscribeTopic } from "./SubscribeDialog";
 import poller from "../app/Poller";
 import toast from "../app/Toast";
 import AccountContext from "./AccountContext";
 import { Paragraph, VerticallyCenteredContainer } from "./styles";
+import { unsubscribedSharedTopics } from "../app/utils";
 
 /**
  * Discover view: lists the topics other users on this server have marked as shared
@@ -22,7 +22,6 @@ import { Paragraph, VerticallyCenteredContainer } from "./styles";
  */
 const Discover = () => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { account } = useContext(AccountContext);
   const { subscriptions } = useOutletContext();
   const [topics, setTopics] = useState(undefined); // undefined: still loading
@@ -56,13 +55,14 @@ const Discover = () => {
     return () => toast.resetListener(listener);
   }, [load]);
 
-  const isSubscribed = (topic) => (subscriptions || []).some((s) => s.baseUrl === config.base_url && s.topic === topic);
+  // Discover only ever shows topics the user can still subscribe to. The subscription list is a live
+  // Dexie query (see App.jsx), so subscribing here removes the item immediately, no reload required.
+  const visibleTopics = unsubscribedSharedTopics(topics, subscriptions, config.base_url);
 
   const handleSubscribe = async (topic) => {
     console.log(`[Discover] Subscribing to shared topic ${topic}`);
     const subscription = await subscribeTopic(config.base_url, topic, {});
     poller.pollInBackground(subscription); // Dangle!
-    navigate(routes.forSubscription(subscription));
   };
 
   if (!loggedIn) {
@@ -99,8 +99,11 @@ const Discover = () => {
         </Typography>
       )}
       {topics !== undefined && error === "" && topics.length === 0 && <Typography color="text.secondary">{t("discover_empty")}</Typography>}
+      {topics !== undefined && error === "" && topics.length > 0 && visibleTopics.length === 0 && (
+        <Typography color="text.secondary">{t("discover_empty_subscribed")}</Typography>
+      )}
       <Stack spacing={2}>
-        {(topics || []).map((topic) => (
+        {visibleTopics.map((topic) => (
           <Card key={topic.topic} variant="outlined">
             <CardContent sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
               <Box sx={{ minWidth: 0 }}>
@@ -111,13 +114,9 @@ const Discover = () => {
                   {t("discover_owner", { owner: topic.owner })}
                 </Typography>
               </Box>
-              {isSubscribed(topic.topic) ? (
-                <Chip label={t("discover_subscribed")} color="success" />
-              ) : (
-                <Button variant="contained" onClick={() => handleSubscribe(topic.topic)}>
-                  {t("discover_subscribe")}
-                </Button>
-              )}
+              <Button variant="contained" onClick={() => handleSubscribe(topic.topic)}>
+                {t("discover_subscribe")}
+              </Button>
             </CardContent>
           </Card>
         ))}

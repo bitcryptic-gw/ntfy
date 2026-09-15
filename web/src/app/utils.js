@@ -73,6 +73,14 @@ export const unmatchedTags = (tags) => {
   return tags.filter((tag) => !(tag in emojisMapped));
 };
 
+// Discovery list minus everything already subscribed on this server: the Discover view should only
+// ever show topics the user can still subscribe to. `sharedTopics` are the `{topic, owner}` entries
+// from `GET /v1/topics?visibility=shared`; `subscriptions` are the local subscription records.
+export const unsubscribedSharedTopics = (sharedTopics, subscriptions, baseUrl) => {
+  const subscribed = new Set((subscriptions || []).filter((s) => s.baseUrl === baseUrl).map((s) => s.topic));
+  return (sharedTopics || []).filter((topic) => !subscribed.has(topic.topic));
+};
+
 export const encodeBase64 = (s) => {
   const bytes = new TextEncoder().encode(s);
   let binary = "";
