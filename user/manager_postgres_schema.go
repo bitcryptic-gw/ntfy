@@ -54,8 +54,12 @@ const (
 			write BOOLEAN NOT NULL,
 			owner_user_id TEXT REFERENCES "user"(id) ON DELETE CASCADE,
 			provisioned BOOLEAN NOT NULL,
-			visibility TEXT NOT NULL DEFAULT 'private',
 			PRIMARY KEY (user_id, topic)
+		);
+		CREATE TABLE IF NOT EXISTS topics (
+			topic TEXT PRIMARY KEY,
+			owner_user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+			visibility TEXT NOT NULL DEFAULT 'private'
 		);
 		CREATE TABLE IF NOT EXISTS user_token (
 			user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
@@ -127,10 +131,24 @@ const (
 		CREATE INDEX idx_magic_link_user_kind ON user_magic_link (user_id, kind);
 	`
 
-	// 9 -> 10: Topic visibility for discovery. Meaningful only on the reservation's owner row
-	// (where user_id = owner_user_id); existing reservations stay 'private'.
+	// 9 -> 10: Topic visibility for discovery. A reservation gets its own row in `topics`,
+	// keyed independently of the ACL rows in `user_access` (which stays as upstream). Existing
+	// reservations are backfilled as 'private'.
+	//
+	// NOTE: rewrites the 9 -> 10 step that briefly put `visibility` on user_access in an earlier
+	// prototype commit; that version was never deployed or proposed upstream, so squashing it is
+	// cleaner than a 10 -> 11 that only undoes it.
 	postgresMigrate9To10UpdateQueries = `
-		ALTER TABLE user_access ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private';
+		CREATE TABLE IF NOT EXISTS topics (
+			topic TEXT PRIMARY KEY,
+			owner_user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+			visibility TEXT NOT NULL DEFAULT 'private'
+		);
+		INSERT INTO topics (topic, owner_user_id, visibility)
+		SELECT topic, owner_user_id, 'private'
+		FROM user_access
+		WHERE user_id = owner_user_id
+		  AND owner_user_id IS NOT NULL;
 	`
 )
 

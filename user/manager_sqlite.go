@@ -111,9 +111,10 @@ const (
 		ORDER BY LENGTH(topic) DESC, write DESC, read DESC, topic
 	`
 	sqliteSelectUserReservationsQuery = `
-		SELECT a_user.topic, a_user.read, a_user.write, a_everyone.read AS everyone_read, a_everyone.write AS everyone_write, a_user.visibility
+		SELECT a_user.topic, a_user.read, a_user.write, a_everyone.read AS everyone_read, a_everyone.write AS everyone_write, IFNULL(t.visibility, 'private')
 		FROM user_access a_user
 		LEFT JOIN  user_access a_everyone ON a_user.topic = a_everyone.topic AND a_everyone.user_id = (SELECT id FROM user WHERE user = ?)
+		LEFT JOIN  topics t ON t.topic = a_user.topic
 		WHERE a_user.user_id = a_user.owner_user_id
 		  AND a_user.owner_user_id = (SELECT id FROM user WHERE user = ?)
 		ORDER BY a_user.topic
@@ -144,26 +145,38 @@ const (
 		  AND (owner_user_id IS NULL OR owner_user_id != (SELECT id FROM user WHERE user = ?))
 	`
 	sqliteSelectSharedTopicsQuery = `
-		SELECT a.topic, u.user
-		FROM user_access a
-		JOIN user u ON u.id = a.owner_user_id
-		WHERE a.user_id = a.owner_user_id
-		  AND a.visibility = ?
-		ORDER BY a.topic
+		SELECT t.topic, u.user
+		FROM topics t
+		JOIN user u ON u.id = t.owner_user_id
+		WHERE t.visibility = ?
+		ORDER BY t.topic
 	`
 	sqliteSelectTopicVisibilityQuery = `
 		SELECT visibility, owner_user_id
-		FROM user_access
+		FROM topics
 		WHERE topic = ?
-		  AND user_id = owner_user_id
 	`
 	sqliteUpdateTopicVisibilityQuery = `
-		UPDATE user_access
+		UPDATE topics
 		SET visibility = ?
 		WHERE topic = ?
-		  AND user_id = owner_user_id
 		  AND owner_user_id = ?
 	`
+	sqliteInsertTopicQuery = `
+		INSERT INTO topics (topic, owner_user_id, visibility)
+		VALUES (?, (SELECT id FROM user WHERE user = ?), 'private')
+		ON CONFLICT (topic) DO NOTHING
+	`
+	sqliteDeleteTopicQuery = `
+		DELETE FROM topics
+		WHERE topic = ?
+		  AND owner_user_id = (SELECT id FROM user WHERE user = ?)
+	`
+	sqliteDeleteUserTopicsQuery = `
+		DELETE FROM topics
+		WHERE owner_user_id = (SELECT id FROM user WHERE user = ?)
+	`
+	sqliteDeleteAllTopicsQuery  = `DELETE FROM topics`
 	sqliteUpsertUserAccessQuery = `
 		INSERT INTO user_access (user_id, topic, read, write, owner_user_id, provisioned)
 		VALUES ((SELECT id FROM user WHERE user = ?), ?, ?, ?, (SELECT IIF(?='',NULL,(SELECT id FROM user WHERE user=?))), ?)
@@ -322,6 +335,10 @@ var sqliteQueries = queries{
 	selectSharedTopics:             sqliteSelectSharedTopicsQuery,
 	selectTopicVisibility:          sqliteSelectTopicVisibilityQuery,
 	updateTopicVisibility:          sqliteUpdateTopicVisibilityQuery,
+	insertTopic:                    sqliteInsertTopicQuery,
+	deleteTopic:                    sqliteDeleteTopicQuery,
+	deleteUserTopics:               sqliteDeleteUserTopicsQuery,
+	deleteAllTopics:                sqliteDeleteAllTopicsQuery,
 	upsertUserAccess:               sqliteUpsertUserAccessQuery,
 	deleteUserAccess:               sqliteDeleteUserAccessQuery,
 	deleteUserAccessProvisioned:    sqliteDeleteUserAccessProvisionedQuery,

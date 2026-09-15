@@ -406,6 +406,10 @@ type queries struct {
 	selectSharedTopics          string // Discovery: shared topics + owner username, for GET /v1/topics
 	selectTopicVisibility       string // Visibility + owner user ID for a reserved topic
 	updateTopicVisibility       string // Set visibility on a topic's owner row (owner only)
+	insertTopic                 string // Create a reservation's topics row (idempotent, keeps visibility)
+	deleteTopic                 string // Remove one owned topic's topics row
+	deleteUserTopics            string // Remove all topics rows owned by a user
+	deleteAllTopics             string // Remove every topics row (used by a full ACL reset)
 	upsertUserAccess            string
 	deleteUserAccess            string
 	deleteUserAccessProvisioned string

@@ -115,13 +115,13 @@ func TestTopics_SharedOnCreation_AnnouncesToDirectory(t *testing.T) {
 		require.Nil(t, s.userManager.ChangeTier("ben", "pro"))
 
 		// The directory is readable by any authenticated user even under deny-all ...
-		rr := request(t, s, "GET", "/_directory/json?poll=1", "", map[string]string{
+		rr := request(t, s, "GET", "/~directory/json?poll=1", "", map[string]string{
 			"Authorization": util.BasicAuth("phil", "phil"),
 		})
 		require.Equal(t, 200, rr.Code)
 
 		// ... but not by anonymous users
-		rr = request(t, s, "GET", "/_directory/json?poll=1", "", nil)
+		rr = request(t, s, "GET", "/~directory/json?poll=1", "", nil)
 		require.Equal(t, 403, rr.Code)
 
 		// Creating a shared reservation announces it on the directory
@@ -134,11 +134,37 @@ func TestTopics_SharedOnCreation_AnnouncesToDirectory(t *testing.T) {
 		require.Equal(t, user.VisibilityShared, visibility)
 		require.NotEmpty(t, owner)
 
-		rr = request(t, s, "GET", "/_directory/json?poll=1", "", map[string]string{
+		rr = request(t, s, "GET", "/~directory/json?poll=1", "", map[string]string{
 			"Authorization": util.BasicAuth("phil", "phil"),
 		})
 		require.Equal(t, 200, rr.Code)
 		require.Contains(t, rr.Body.String(), "announced")
 		require.Contains(t, rr.Body.String(), "ben")
+	})
+}
+
+func TestTopics_ReservedNameCannotBeClaimedOrRead(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		c := newTestConfigWithAuthFile(t, databaseURL)
+		c.AuthDefault = user.PermissionDenyAll
+		s := newTestServer(t, c)
+		defer s.closeDatabases()
+
+		require.Nil(t, s.userManager.AddUser("ben", "ben", user.RoleUser, false))
+
+		// A regular user cannot reserve a reserved system topic name via the API ...
+		rr := request(t, s, "POST", "/v1/account/reservation", `{"topic":"~directory","everyone":"deny-all"}`, map[string]string{
+			"Authorization": util.BasicAuth("ben", "ben"),
+		})
+		require.Equal(t, 400, rr.Code)
+
+		// ... nor via the manager directly.
+		require.Equal(t, user.ErrInvalidArgument, s.userManager.AddReservation("ben", "~directory", user.PermissionDenyAll, 0))
+
+		// Other reserved system topics stay internal, even for authenticated users.
+		rr = request(t, s, "GET", "/~control/json?poll=1", "", map[string]string{
+			"Authorization": util.BasicAuth("ben", "ben"),
+		})
+		require.Equal(t, 403, rr.Code)
 	})
 }

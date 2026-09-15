@@ -84,16 +84,19 @@ var (
 	topicRegex             = regexp.MustCompile(`^[-_A-Za-z0-9]{1,64}$`)               // No /!
 	topicPathRegex         = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}$`)              // Regex must match JS & Android app!
 	externalTopicPathRegex = regexp.MustCompile(`^/[^/]+\.[^/]+/[-_A-Za-z0-9]{1,64}$`) // Extended topic path, for web-app, e.g. /example.com/mytopic
-	jsonPathRegex          = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/json$`)
-	ssePathRegex           = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/sse$`)
-	rawPathRegex           = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/raw$`)
-	wsPathRegex            = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/ws$`)
-	authPathRegex          = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/auth$`)
-	publishPathRegex       = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/(publish|send|trigger)$`)
-	updatePathRegex        = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}$`)
-	clearPathRegex         = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}/(read|clear)$`)
-	deletePathRegex        = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}/delete$`)
-	sequenceIDRegex        = topicRegex
+	// The subscribe/auth paths also accept the reserved "~" system-topic prefix (e.g. ~directory),
+	// which the publish/update/delete paths deliberately do not: system topics are read-only to
+	// clients. Access to them is gated in authorizeTopic, not by the reserved name itself.
+	jsonPathRegex    = regexp.MustCompile(`^/[-_~A-Za-z0-9]{1,64}(,[-_~A-Za-z0-9]{1,64})*/json$`)
+	ssePathRegex     = regexp.MustCompile(`^/[-_~A-Za-z0-9]{1,64}(,[-_~A-Za-z0-9]{1,64})*/sse$`)
+	rawPathRegex     = regexp.MustCompile(`^/[-_~A-Za-z0-9]{1,64}(,[-_~A-Za-z0-9]{1,64})*/raw$`)
+	wsPathRegex      = regexp.MustCompile(`^/[-_~A-Za-z0-9]{1,64}(,[-_~A-Za-z0-9]{1,64})*/ws$`)
+	authPathRegex    = regexp.MustCompile(`^/[-_~A-Za-z0-9]{1,64}(,[-_~A-Za-z0-9]{1,64})*/auth$`)
+	publishPathRegex = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/(publish|send|trigger)$`)
+	updatePathRegex  = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}$`)
+	clearPathRegex   = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}/(read|clear)$`)
+	deletePathRegex  = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}/delete$`)
+	sequenceIDRegex  = topicRegex
 
 	webAppConfigPath              = "/config.js"
 	webAppManifestPath            = "/manifest.webmanifest"
@@ -155,17 +158,18 @@ var (
 )
 
 const (
-	firebaseControlTopic     = "~control"                // See Android if changed
-	firebasePollTopic        = "~poll"                   // See iOS if changed (DISABLED for now)
-	directoryTopicID         = "_directory"              // Discovery channel: shared topics are announced here; readable by any authenticated user
-	emptyMessageBody         = "triggered"               // Used when a message body is empty
-	newMessageBody           = "New message"             // Used in poll requests as generic message
-	defaultAttachmentMessage = "You received a file: %s" // Used if message body is empty, and there is an attachment
-	encodingBase64           = "base64"                  // Used mainly for binary UnifiedPush messages
-	jsonBodyBytesLimit       = 131072                    // Max number of bytes for a request bodys (unless MessageLimit is higher)
-	unifiedPushTopicPrefix   = "up"                      // Temporarily, we rate limit all "up*" topics based on the subscriber
-	unifiedPushTopicLength   = 14                        // Length of UnifiedPush topics, including the "up" part
-	messagesHistoryMax       = 10                        // Number of message count values to keep in memory
+	firebaseControlTopic     = "~control"                        // See Android if changed
+	firebasePollTopic        = "~poll"                           // See iOS if changed (DISABLED for now)
+	reservedTopicPrefix      = "~"                               // System topics: not valid user topics (allowedTopicRegex rejects "~"), so they can never be reserved
+	directoryTopicID         = reservedTopicPrefix + "directory" // Discovery channel: shared topics are announced here; readable by any authenticated user
+	emptyMessageBody         = "triggered"                       // Used when a message body is empty
+	newMessageBody           = "New message"                     // Used in poll requests as generic message
+	defaultAttachmentMessage = "You received a file: %s"         // Used if message body is empty, and there is an attachment
+	encodingBase64           = "base64"                          // Used mainly for binary UnifiedPush messages
+	jsonBodyBytesLimit       = 131072                            // Max number of bytes for a request bodys (unless MessageLimit is higher)
+	unifiedPushTopicPrefix   = "up"                              // Temporarily, we rate limit all "up*" topics based on the subscriber
+	unifiedPushTopicLength   = 14                                // Length of UnifiedPush topics, including the "up" part
+	messagesHistoryMax       = 10                                // Number of message count values to keep in memory
 )
 
 // WebSocket constants

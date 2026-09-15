@@ -775,6 +775,10 @@ func (a *Manager) resetAccessTx(tx *sql.Tx, username string, topicPattern string
 		return ErrInvalidArgument
 	}
 	if username == "" && topicPattern == "" {
+		// Full reset: all ACL rows go, so all reservations (and their topics rows) go too.
+		if _, err := tx.Exec(a.queries.deleteAllTopics); err != nil {
+			return err
+		}
 		_, err := tx.Exec(a.queries.deleteAllAccess)
 		return err
 	} else if topicPattern == "" {
@@ -890,10 +894,12 @@ func (a *Manager) Grants(username string) ([]Grant, error) {
 	return grants, nil
 }
 
-// AddReservation creates two access control entries for the given topic: one with full read/write
-// access for the given user, and one for Everyone with the given permission. Both entries are
-// created atomically in a single transaction. If limit is > 0, the reservation count is checked
-// inside the transaction and ErrTooManyReservations is returned if the limit would be exceeded.
+// AddReservation creates a owned topic plus two access control entries for it: one with full
+// read/write access for the given user, and one for Everyone with the given permission. The
+// topics row is the reservation entity (owner + visibility); the user_access rows stay pure ACL
+// grants. Everything is created atomically in a single transaction. If limit is > 0, the
+// reservation count is checked inside the transaction and ErrTooManyReservations is returned if
+// the limit would be exceeded.
 func (a *Manager) AddReservation(username string, topic string, everyone Permission, limit int64) error {
 	if !AllowedUsername(username) || username == Everyone || !AllowedTopic(topic) {
 		return ErrInvalidArgument
@@ -913,6 +919,10 @@ func (a *Manager) AddReservation(username string, topic string, everyone Permiss
 					return ErrTooManyReservations
 				}
 			}
+		}
+		// Idempotent: re-adding an existing reservation must not reset a shared topic to private.
+		if _, err := tx.Exec(a.queries.insertTopic, toSQLWildcard(topic), username); err != nil {
+			return err
 		}
 		if _, err := tx.Exec(a.queries.upsertUserAccess, username, toSQLWildcard(topic), true, true, username, username, false); err != nil {
 			return err
@@ -991,8 +1001,8 @@ func (a *Manager) reservationsTx(tx db.Querier, username string) ([]Reservation,
 }
 
 // TopicVisibility returns the visibility and owner user ID of the reservation for the given
-// topic. It returns an empty owner ID if the topic is not reserved by anyone. Visibility is only
-// tracked on the owner row; the paired Everyone row is ignored.
+// topic, read from the topics table. It returns an empty owner ID if the topic is not reserved
+// by anyone.
 func (a *Manager) TopicVisibility(topic string) (Visibility, string, error) {
 	rows, err := a.db.Query(a.queries.selectTopicVisibility, escapeUnderscore(topic))
 	if err != nil {
@@ -1009,9 +1019,9 @@ func (a *Manager) TopicVisibility(topic string) (Visibility, string, error) {
 	return Visibility(visibility), ownerUserID, nil
 }
 
-// SetTopicVisibility changes the visibility of a topic reservation. It updates the reservation's
-// owner row for the given owner user ID; ErrUnauthorized is returned if that user does not own
-// the topic. Callers are responsible for the authorization decision (owner or admin).
+// SetTopicVisibility changes the visibility of a topic reservation. It updates the topics row
+// for the given owner user ID; ErrUnauthorized is returned if that user does not own the topic.
+// Callers are responsible for the authorization decision (owner or admin).
 func (a *Manager) SetTopicVisibility(ownerUserID, topic string, visibility Visibility) error {
 	if ownerUserID == "" || !AllowedTopic(topic) {
 		return ErrInvalidArgument
@@ -1171,12 +1181,20 @@ func (a *Manager) removeReservationAccessTx(tx *sql.Tx, username, topic string) 
 	if err := a.resetTopicAccessTx(tx, username, topic); err != nil {
 		return err
 	}
+	// Drop the reservation entity along with its ACL rows.
+	if _, err := tx.Exec(a.queries.deleteTopic, toSQLWildcard(topic), username); err != nil {
+		return err
+	}
 	return a.resetTopicAccessTx(tx, Everyone, topic)
 }
 
 func (a *Manager) resetUserAccessTx(tx *sql.Tx, username string) error {
 	if !AllowedUsername(username) && username != Everyone {
 		return ErrInvalidArgument
+	}
+	// All of this user's reservations lose their ACL rows below, so drop their topics rows too.
+	if _, err := tx.Exec(a.queries.deleteUserTopics, username); err != nil {
+		return err
 	}
 	_, err := tx.Exec(a.queries.deleteUserAccess, username, username)
 	return err
